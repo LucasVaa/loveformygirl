@@ -7,6 +7,8 @@ const Memory = require('./models/Memory');
 const path = require('path');
 const fs = require('fs');
 
+const API_URL = process.env.API_URL || 'http://localhost:3000';
+
 // 中间件
 app.use(cors())
 app.use(express.json())
@@ -38,8 +40,15 @@ app.use('/uploads', express.static(uploadDir));
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
-}).array('images', 10);
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('只能上传图片文件'));
+    }
+  }
+}).array('images', 10); // 允许最多10张图片
 
 // API路由
 app.get('/api/messages', async (req, res) => {
@@ -62,7 +71,7 @@ app.post('/api/messages', async (req, res) => {
 })
 
 app.post('/api/memories/upload', (req, res) => {
-  upload(req, res, async function(err) {
+  upload(req, res, function(err) {
     if (err) {
       console.error('Upload error:', err);
       return res.status(400).json({ error: err.message });
@@ -73,14 +82,10 @@ app.post('/api/memories/upload', (req, res) => {
         return res.status(400).json({ error: '没有上传文件' });
       }
 
-      // 直接保存图片到数据库
-      const images = await Promise.all(req.files.map(async (file) => {
-        const image = {
-          data: file.buffer,
-          contentType: file.mimetype,
-          _id: new mongoose.Types.ObjectId()
-        };
-        return image;
+      const images = req.files.map(file => ({
+        data: file.buffer,
+        contentType: file.mimetype,
+        _id: new mongoose.Types.ObjectId()
       }));
 
       // 存储临时图片数据
@@ -89,17 +94,12 @@ app.post('/api/memories/upload', (req, res) => {
         req.app.locals.tempImages[img._id.toString()] = img;
       });
 
-      // 返回图片URL
-      const imageUrls = images.map(img => 
-        `http://localhost:3000/api/images/${img._id}`
-      );
-
       res.json({ 
-        imageUrls,
+        imageUrls: images.map(img => `/api/images/${img._id}`),
         imageIds: images.map(img => img._id.toString())
       });
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('Server error:', error);
       res.status(500).json({ error: '上传失败' });
     }
   });
@@ -151,6 +151,10 @@ app.post('/api/memories', async (req, res) => {
     const images = imageIds.map(id => req.app.locals.tempImages[id])
                          .filter(Boolean);
 
+    if (images.length === 0) {
+      return res.status(400).json({ error: '没有有效的图片' });
+    }
+
     const memory = new Memory({
       title,
       date,
@@ -164,16 +168,16 @@ app.post('/api/memories', async (req, res) => {
     // 清理临时存储
     imageIds.forEach(id => delete req.app.locals.tempImages[id]);
 
-    // 返回带有图片URL的数据
+    // 返回格式化后的数据
     const memoryData = memory.toObject();
     memoryData.images = memory.images.map(img => 
-      `http://localhost:3000/api/images/${img._id}`
+      `${API_URL}/api/images/${img._id}`
     );
 
     res.json(memoryData);
   } catch (error) {
-    console.error('Save error:', error);
-    res.status(500).json({ error: '保存失败' });
+    console.error('Save memory error:', error);
+    res.status(500).json({ error: '保存回忆失败' });
   }
 });
 
@@ -181,19 +185,28 @@ app.get('/api/memories', async (req, res) => {
   try {
     const memories = await Memory.find().sort('-date');
     
-    // 转换图片URL
+    // 转换图片URL和格式化数据
     const memoriesWithUrls = memories.map(memory => {
       const memoryData = memory.toObject();
       memoryData.images = memory.images.map(img => 
-        `http://localhost:3000/api/images/${img._id}`
+        `${API_URL}/api/images/${img._id}`
       );
-      return memoryData;
+      return {
+        _id: memoryData._id,
+        title: memoryData.title,
+        date: memoryData.date,
+        description: memoryData.description,
+        tags: memoryData.tags,
+        images: memoryData.images,
+        createdAt: memoryData.createdAt
+      };
     });
 
+    console.log('Sending memories:', memoriesWithUrls); // 调试用
     res.json(memoriesWithUrls);
   } catch (error) {
-    console.error('Fetch error:', error);
-    res.status(500).json({ error: '获取回忆失败' });
+    console.error('Fetch memories error:', error);
+    res.status(500).json({ error: '获取回忆列表失败' });
   }
 });
 
