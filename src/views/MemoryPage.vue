@@ -2,10 +2,16 @@
   <div class="memory">
     <BackButton />
     <div class="memory-content">
-      <h2 class="memory-title">美好回忆</h2>
+      <div class="header-actions">
+        <h2 class="memory-title">美好回忆</h2>
+        <button class="add-btn" @click="showCreateModal = true">
+          创建新回忆 ✨
+        </button>
+      </div>
+
       <div class="memory-grid">
-        <div v-for="(memory, index) in memories" 
-             :key="index" 
+        <div v-for="memory in memories" 
+             :key="memory._id" 
              class="memory-card"
              @click="showMemory(memory)">
           <div class="image-container">
@@ -21,142 +27,199 @@
       </div>
     </div>
 
-    <div v-if="selectedMemory" 
-         class="memory-modal"
-         @click.self="closeMemory">
+    <div v-if="showCreateModal" 
+         class="create-modal"
+         @click.self="closeCreateModal">
       <div class="modal-content">
-        <button class="close-btn" @click="closeMemory">
-          <span>&times;</span>
-        </button>
-        <div class="modal-scroll-container">
-          <div class="modal-image-container">
-            <div class="image-slider">
-              <div class="slider-track" 
-                   :style="{ transform: `translateX(-${currentImageIndex * 100}%)` }">
-                <img v-for="(image, index) in selectedMemory.images"
-                     :key="index"
-                     :src="image" 
-                     :alt="`${selectedMemory.title} - ${index + 1}`">
-              </div>
-              
-              <button class="slider-btn prev" 
-                      @click.stop="prevImage"
-                      v-show="selectedMemory.images.length > 1">
-                ❮
-              </button>
-              <button class="slider-btn next" 
-                      @click.stop="nextImage"
-                      v-show="selectedMemory.images.length > 1">
-                ❯
-              </button>
+        <h3>创建新回忆</h3>
+        <div v-if="error" class="error-message">{{ error }}</div>
+        
+        <form @submit.prevent="saveMemory" class="create-form">
+          <div class="form-group">
+            <label>标题</label>
+            <input 
+              v-model="newMemory.title" 
+              required
+              placeholder="给这个回忆起个名字">
+          </div>
 
-              <div class="image-indicators" v-show="selectedMemory.images.length > 1">
-                <span v-for="(_, idx) in selectedMemory.images" 
-                      :key="idx"
-                      :class="{ active: idx === currentImageIndex }"
-                      @click.stop="setCurrentImage(idx)">
-                </span>
+          <div class="form-group">
+            <label>日期</label>
+            <input 
+              type="date" 
+              v-model="newMemory.date" 
+              required>
+          </div>
+
+          <div class="form-group">
+            <label>描述</label>
+            <textarea 
+              v-model="newMemory.description" 
+              rows="4" 
+              required
+              placeholder="记录下这个美好时刻..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>标签</label>
+            <input 
+              v-model="tagsInput" 
+              placeholder="用逗号分隔多个标签，如：约会,旅行">
+          </div>
+
+          <div class="form-group">
+            <label>上传图片</label>
+            <input 
+              type="file" 
+              ref="fileInput"
+              @change="handleImageUpload"
+              accept="image/*"
+              multiple
+              class="file-input">
+            
+            <div class="image-preview-container">
+              <div v-for="(file, index) in selectedFiles" 
+                   :key="index" 
+                   class="image-preview">
+                <img :src="getPreviewUrl(file)" alt="预览">
+                <button 
+                  type="button"
+                  class="remove-image"
+                  @click="removeImage(index)">×</button>
               </div>
             </div>
           </div>
 
-          <div class="modal-info">
-            <h3 class="modal-title">{{ selectedMemory.title }}</h3>
-            <div class="modal-date">
-              <i class="date-icon">📅</i>
-              {{ selectedMemory.date }}
-            </div>
-            <div class="modal-description">
-              <i class="desc-icon">💝</i>
-              {{ selectedMemory.description }}
-            </div>
-            <div class="modal-tags" v-if="selectedMemory.tags?.length">
-              <i class="tag-icon">🏷️</i>
-              <span v-for="tag in selectedMemory.tags" 
-                    :key="tag" 
-                    class="tag">
-                {{ tag }}
-              </span>
-            </div>
+          <div class="form-actions">
+            <button type="button" 
+                    @click="closeCreateModal"
+                    class="cancel-btn">取消</button>
+            <button type="submit" 
+                    class="save-btn"
+                    :disabled="!isFormValid">
+              {{ saving ? '保存中...' : '保存回忆' }}
+            </button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import axios from 'axios'
 import BackButton from '../components/BackButton.vue'
 
-const selectedMemory = ref(null)
-const currentImageIndex = ref(0)
+const API_URL = 'http://localhost:3000/api'
 
-// 示例数据结构
-const memories = [
-  {
-    title: '我们的第一次约会',
-    images: [
-      '/images/the-beautiful-girl.png',
-      '/images/IMG_4235.JPEG',
-      '/images/IMG_4235.JPEG'
-    ],
-    date: '2024-01-01',
-    description: '那天天气真好，你的笑容比阳光还温暖...',
-    tags: ['约会', '第一次', '难忘时刻']
-  },
-  // ... 更多回忆
-]
+const memories = ref([])
+const showCreateModal = ref(false)
+const error = ref('')
+const saving = ref(false)
+const tagsInput = ref('')
+const selectedFiles = ref([])
+
+const newMemory = ref({
+  title: '',
+  date: '',
+  description: '',
+  images: [],
+  tags: []
+})
+
+const fetchMemories = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/memories`)
+    memories.value = response.data
+  } catch (err) {
+    console.error('获取回忆失败:', err)
+  }
+}
 
 const showMemory = (memory) => {
-  selectedMemory.value = memory
-  currentImageIndex.value = 0
+  newMemory.value = memory
 }
 
-const closeMemory = () => {
-  selectedMemory.value = null
-  currentImageIndex.value = 0
+const closeCreateModal = () => {
+  showCreateModal.value = false
+  newMemory.value = {
+    title: '',
+    date: '',
+    description: '',
+    images: []
+  }
+  selectedFiles.value = []
+  tagsInput.value = ''
+  error.value = ''
 }
 
-const nextImage = () => {
-  if (!selectedMemory.value) return
-  currentImageIndex.value = (currentImageIndex.value + 1) % selectedMemory.value.images.length
-}
-
-const prevImage = () => {
-  if (!selectedMemory.value) return
-  currentImageIndex.value = currentImageIndex.value === 0 
-    ? selectedMemory.value.images.length - 1 
-    : currentImageIndex.value - 1
-}
-
-const setCurrentImage = (index) => {
-  currentImageIndex.value = index
-}
-
-// 键盘导航
-const handleKeyDown = (e) => {
-  if (!selectedMemory.value) return
+const handleImageUpload = (event) => {
+  const files = event.target.files
+  if (!files.length) return
   
-  switch(e.key) {
-    case 'ArrowLeft':
-      prevImage()
-      break
-    case 'ArrowRight':
-      nextImage()
-      break
-    case 'Escape':
-      closeMemory()
-      break
+  selectedFiles.value = [...selectedFiles.value, ...Array.from(files)]
+}
+
+const getPreviewUrl = (file) => {
+  if (typeof file === 'string') {
+    return file
+  }
+  return URL.createObjectURL(file)
+}
+
+const removeImage = (index) => {
+  selectedFiles.value.splice(index, 1)
+}
+
+const isFormValid = computed(() => {
+  return newMemory.value.title && 
+         newMemory.value.date && 
+         newMemory.value.description && 
+         selectedFiles.value.length > 0
+})
+
+const saveMemory = async () => {
+  if (!isFormValid.value) return
+  
+  saving.value = true
+  error.value = ''
+  
+  try {
+    const formData = new FormData()
+    selectedFiles.value.forEach(file => {
+      formData.append('images', file)
+    })
+    
+    const { data: uploadResponse } = await axios.post(
+      `${API_URL}/memories/upload`, 
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      }
+    )
+    
+    const memoryData = {
+      title: newMemory.value.title,
+      date: newMemory.value.date,
+      description: newMemory.value.description,
+      tags: tagsInput.value.split(',').map(tag => tag.trim()).filter(Boolean),
+      imageIds: uploadResponse.imageIds
+    }
+    
+    await axios.post(`${API_URL}/memories`, memoryData)
+    await fetchMemories()
+    closeCreateModal()
+  } catch (err) {
+    console.error('Save error:', err)
+    error.value = '保存失败：' + (err.response?.data?.error || err.message)
+  } finally {
+    saving.value = false
   }
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeyDown)
+  fetchMemories()
 })
 </script>
 
@@ -548,5 +611,62 @@ onUnmounted(() => {
   .image-indicators span {
     width: 6px;
   }
+}
+
+.image-preview-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.image-preview {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 0, 0, 0.7);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.save-btn {
+  background: #ff6b81;
+  color: white;
+  padding: 0.5rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.save-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: red;
+  margin-bottom: 1rem;
 }
 </style> 

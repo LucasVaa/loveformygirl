@@ -5,10 +5,6 @@ const memorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  images: [{
-    type: String,
-    required: true
-  }],
   date: {
     type: String,
     required: true
@@ -17,9 +13,11 @@ const memorySchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  tags: [{
-    type: String
+  images: [{
+    data: Buffer,
+    contentType: String
   }],
+  tags: [String],
   createdAt: {
     type: Date,
     default: Date.now
