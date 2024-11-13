@@ -21,8 +21,8 @@
 import { ref, onMounted, computed } from 'vue'
 import BackButton from '../components/BackButton.vue'
 
-const girlName = ref('宝贝') // 替换成女友的名字
-const boyName = ref('你的名字') // 替换成你的名字
+const girlName = ref('臻臻') // 替换成女友的名字
+const boyName = ref('硕硕') // 替换成你的名字
 
 // 信的内容
 const letter = `还记得我们第一次相遇的场景吗？那天的阳光正好，照在你的脸上，让我一瞬间就心动了。

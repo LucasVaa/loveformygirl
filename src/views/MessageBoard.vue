@@ -4,8 +4,18 @@
     <div class="board-container">
       <h2 class="board-title">我们的留言板</h2>
       
+      <!-- 错误提示 -->
+      <div v-if="error" class="error-message">
+        {{ error }}
+      </div>
+      
       <!-- 留言输入区 -->
       <div class="message-input">
+        <input 
+          v-model="visitorName"
+          placeholder="请输入您的姓名"
+          class="name-input"
+        />
         <textarea 
           v-model="newMessage"
           placeholder="写下你想说的话..."
@@ -22,20 +32,25 @@
               {{ emoji }}
             </span>
           </div>
-          <button @click="addMessage" :disabled="!newMessage.trim()">
+          <button @click="addMessage" :disabled="!canSubmit">
             发送 💝
           </button>
         </div>
       </div>
 
+      <!-- 加载状态 -->
+      <div v-if="loading" class="loading">
+        加载中...
+      </div>
+
       <!-- 留言展示区 -->
-      <div class="message-list">
-        <div v-for="(msg, index) in messages" 
-             :key="index"
-             class="message-item"
-             :class="{ 'message-right': msg.isMe }">
+      <div v-else class="message-list">
+        <div v-for="msg in messages" 
+             :key="msg._id"
+             class="message-item">
           <div class="message-content">
             <div class="message-header">
+              <span class="visitor-name">{{ msg.visitorName }}</span>
               <span class="message-mood">{{ msg.mood }}</span>
               <span class="message-time">{{ formatDate(msg.time) }}</span>
             </div>
@@ -48,52 +63,65 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import axios from 'axios'
 import BackButton from '../components/BackButton.vue'
 
+const visitorName = ref('')
 const newMessage = ref('')
 const selectedEmoji = ref('😊')
-const messages = ref([
-  {
-    content: '我也想和你一起看星星',
-    mood: '🌟',
-    time: new Date('2024-01-01 12:05:00'),
-    isMe: false
-  },
-  {
-    content: '今天天气真好，想和你一起散步',
-    mood: '😊',
-    time: new Date('2024-01-01 12:00:00'),
-    isMe: true
-  }
-])
+const messages = ref([])
+const loading = ref(false)
+const error = ref(null)
+const emojis = ['😊', '😂', '🥰', '😍', '🤔', '😮', '😢', '🙏']
 
-const emojis = ['😊', '🥰', '😘', '💕', '🌟', '🎵']
+const API_URL = 'http://localhost:3000/api'
 
-onMounted(() => {
-  const savedMessages = localStorage.getItem('loveMessages')
-  if (savedMessages) {
-    messages.value = JSON.parse(savedMessages).map(msg => ({
+// 计算属性：检查是否可以提交
+const canSubmit = computed(() => {
+  return visitorName.value.trim() && newMessage.value.trim()
+})
+
+// 获取消息
+const fetchMessages = async () => {
+  try {
+    loading.value = true
+    const response = await axios.get(`${API_URL}/messages`)
+    messages.value = response.data.map(msg => ({
       ...msg,
       time: new Date(msg.time)
     }))
+  } catch (err) {
+    error.value = '获取消息失败'
+    console.error(err)
+  } finally {
+    loading.value = false
   }
+}
+
+onMounted(() => {
+  fetchMessages()
 })
 
-const addMessage = () => {
-  if (!newMessage.value.trim()) return
+// 添加消息
+const addMessage = async () => {
+  if (!canSubmit.value) return
   
-  const message = {
-    content: newMessage.value,
-    mood: selectedEmoji.value,
-    time: new Date(),
-    isMe: true
+  try {
+    const message = {
+      visitorName: visitorName.value.trim(),
+      content: newMessage.value,
+      mood: selectedEmoji.value,
+      time: new Date()
+    }
+    
+    await axios.post(`${API_URL}/messages`, message)
+    await fetchMessages()
+    newMessage.value = ''
+  } catch (err) {
+    error.value = '发送消息失败'
+    console.error(err)
   }
-  
-  messages.value.unshift(message)
-  localStorage.setItem('loveMessages', JSON.stringify(messages.value))
-  
-  newMessage.value = ''
 }
 
 const selectEmoji = (emoji) => {
@@ -225,15 +253,6 @@ button:disabled {
   box-shadow: 0 2px 5px rgba(0,0,0,0.05);
 }
 
-.message-right {
-  justify-content: flex-end;
-}
-
-.message-right .message-content {
-  background: #ff6b81;
-  color: white;
-}
-
 .message-header {
   display: flex;
   align-items: center;
@@ -248,10 +267,6 @@ button:disabled {
 
 .message-time {
   color: #666;
-}
-
-.message-right .message-time {
-  color: rgba(255,255,255,0.8);
 }
 
 .message-text {
@@ -288,5 +303,43 @@ button:disabled {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.error-message {
+  background: #ffebee;
+  color: #c62828;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.name-input {
+  width: 100%;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+}
+
+.name-input:focus {
+  border-color: #ff6b81;
+}
+
+.visitor-name {
+  font-weight: bold;
+  color: #ff6b81;
+  margin-right: 0.5rem;
+}
+
+.message-right .visitor-name {
+  color: white;
 }
 </style> 
