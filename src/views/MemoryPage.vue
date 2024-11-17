@@ -23,14 +23,15 @@
            class="memory-card"
            @click="showMemory(memory)">
         <div class="image-container">
-          <!-- 使用懒加载和缩略图 -->
-          <img v-lazy="getThumbUrl(memory.images[0])"
-               :alt="memory.title"
-               loading="lazy">
-          <div v-if="memory.images.length > 1" 
-               class="image-badge">
-            <span class="image-icon">🖼</span>
-            {{ memory.images.length }}
+          <img v-lazy="{
+            src: getThumbUrl(memory.images[0]),
+            loading: placeholderImage,
+            error: placeholderImage
+          }"
+          :alt="memory.title"
+          @load="onImageLoad(memory._id)">
+          <div v-if="!imageLoadStatus[memory._id]" class="image-loading">
+            <el-spinner size="small" />
           </div>
         </div>
         <div class="card-content">
@@ -136,24 +137,16 @@
         <div class="viewer-body">
           <div class="viewer-main">
             <div class="main-image">
-              <!-- 使用高质量图片 -->
-              <img v-lazy="getOriginalUrl(selectedMemory.images[currentImageIndex])"
+              <img v-if="currentImage"
+                   v-lazy="{
+                     src: getOptimizedUrl(currentImage),
+                     loading: getThumbUrl(currentImage),
+                     error: placeholderImage
+                   }"
                    :alt="selectedMemory.title"
-                   @load="imageLoaded = true">
-              <!-- 加载占位符 -->
-              <div v-if="!imageLoaded" class="image-placeholder">
+                   @load="onViewerImageLoad">
+              <div v-if="!viewerImageLoaded" class="image-placeholder">
                 <el-spinner />
-              </div>
-              
-              <button class="nav-btn prev" 
-                      @click.stop="prevImage" 
-                      v-show="currentImageIndex > 0">❮</button>
-              <button class="nav-btn next" 
-                      @click.stop="nextImage"
-                      v-show="currentImageIndex < selectedMemory.images.length - 1">❯</button>
-              
-              <div class="image-counter">
-                {{ currentImageIndex + 1 }} / {{ selectedMemory.images.length }}
               </div>
             </div>
 
@@ -185,7 +178,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import axios from 'axios'
 import { ElSpinner } from 'element-plus'
 import BackButton from '../components/BackButton.vue'
@@ -199,7 +192,6 @@ const error = ref('')
 const loading = ref(false)
 const page = ref(1)
 const hasMore = ref(true)
-const imageLoaded = ref(false)
 
 const newMemory = ref({
   title: '',
@@ -210,6 +202,13 @@ const newMemory = ref({
 
 // 添加图片预览 URL 数组
 const imagePreviewUrls = ref([])
+
+// 添加图片加载状态管理
+const imageLoadStatus = ref({})
+const viewerImageLoaded = ref(false)
+const currentImage = computed(() => 
+  selectedMemory.value?.images[currentImageIndex.value]
+)
 
 const handleImageUpload = (event) => {
   const files = Array.from(event.target.files)
@@ -290,35 +289,16 @@ const currentImageIndex = ref(0)
 const showMemory = (memory) => {
   selectedMemory.value = memory
   currentImageIndex.value = 0
-  imageLoaded.value = false
-  // 禁止背景滚动
+  viewerImageLoaded.value = false // 重置加载状态
   document.body.style.overflow = 'hidden'
-  document.body.style.position = 'fixed'
-  document.body.style.width = '100%'
 }
 
 const closeViewer = () => {
   selectedMemory.value = null
   currentImageIndex.value = 0
-  imageLoaded.value = false
-  // 恢复背景滚动
+  viewerImageLoaded.value = false
   document.body.style.overflow = ''
-  document.body.style.position = ''
-  document.body.style.width = ''
 }
-
-const prevImage = () => {
-  if (currentImageIndex.value > 0) {
-    currentImageIndex.value--
-  }
-}
-
-const nextImage = () => {
-  if (currentImageIndex.value < selectedMemory.value.images.length - 1) {
-    currentImageIndex.value++
-  }
-}
-
 const fetchMemories = async () => {
   try {
     const response = await axios.get(`${API_URL}/memories`)
@@ -344,12 +324,6 @@ const size = ref('large')
 const getThumbUrl = (imageUrl) => {
   if (!imageUrl) return ''
   return `${imageUrl}?size=thumb`
-}
-
-// 获取原图URL
-const getOriginalUrl = (imageUrl) => {
-  if (!imageUrl) return ''
-  return `${imageUrl}?size=original`
 }
 
 const ITEMS_PER_PAGE = 10  // 定义每页加载数量
@@ -388,7 +362,39 @@ const loadMore = async () => {
   }
 }
 
+// 图片加载完成处理函数
+const onImageLoad = (memoryId) => {
+  imageLoadStatus.value[memoryId] = true
+}
+
+const onViewerImageLoad = () => {
+  viewerImageLoaded.value = true
+}
+
+// 优化图片URL处理
+const getOptimizedUrl = (imageUrl) => {
+  if (!imageUrl) return ''
+  // 根据屏幕宽度选择合适的图片尺寸
+  const width = window.innerWidth
+  let size = 'medium' // 默认中等尺寸
+  
+  if (width <= 768) {
+    size = 'small' // 移动端使用小图
+  } else if (width > 1920) {
+    size = 'large' // 大屏使用大图
+  }
+  
+  return `${imageUrl}?size=${size}&quality=80` // 添加质量参数
+}
+
+// 图片切换时重置加载状态
+watch(currentImageIndex, () => {
+  viewerImageLoaded.value = false
+})
+
 // ... 其他代码 ...
+
+const placeholderImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjgwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHBhdGggZD0iTTE0MCw4MCBMMTgwLDE0MCBMMTAwLDE0MCBaIiBmaWxsPSIjZTBlMGUwIi8+PGNpcmNsZSBjeD0iMjAwIiBjeT0iNzAiIHI9IjE1IiBmaWxsPSIjZTBlMGUwIi8+PC9zdmc+'
 </script>
 
 <style scoped>
@@ -1225,5 +1231,52 @@ const loadMore = async () => {
   color: #ffa5b1;
 }
 
-/* ... 其他样式 ... */
+/* 添加图片加载状态样式 */
+.image-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+}
+
+.image-container {
+  position: relative;
+}
+
+/* 优化图片过渡效果 */
+.image-container img {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.image-container img.loaded {
+  opacity: 1;
+}
+
+/* 添加骨架屏效果 */
+.image-loading::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, #f0f0f0 25%, #f8f8f8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
 </style> 
