@@ -7,7 +7,7 @@ const Memory = require('./models/Memory')
 const path = require('path')
 const fs = require('fs')
 const sharp = require('sharp')
-const NodeCache = require('node-cache')
+const COS = require('cos-nodejs-sdk-v5')
 
 const API_URL = process.env.API_URL || 'http://110.42.197.57:3000'
 
@@ -40,12 +40,6 @@ if (!fs.existsSync(uploadDir)){
 
 // 配置静态文件访问
 app.use('/uploads', express.static(uploadDir))
-
-// 创建缓存实例
-const imageCache = new NodeCache({ 
-  stdTTL: 600, // 缓存10分钟
-  checkperiod: 120 
-})
 
 // 修改存储配置，改用磁盘存储
 const storage = multer.diskStorage({
@@ -90,7 +84,16 @@ app.post('/api/messages', async (req, res) => {
   }
 })
 
-// 图片处理和上传
+// 首先添加腾讯云 COS SDK
+const cos = new COS({
+    SecretId: process.env.COS_SECRET_ID,
+    SecretKey: process.env.COS_SECRET_KEY
+})
+
+const BUCKET = process.env.COS_BUCKET
+const REGION = process.env.COS_REGION
+
+// 修改图片上传接口
 app.post('/api/memories/upload', async (req, res) => {
   upload(req, res, async function(err) {
     if (err) {
@@ -104,25 +107,52 @@ app.post('/api/memories/upload', async (req, res) => {
       }
 
       const processedImages = await Promise.all(req.files.map(async file => {
+        const imageId = new mongoose.Types.ObjectId()
+        
         // 生成缩略图
         const thumbnail = await sharp(file.path)
-          .resize(800, 800, { // 限制最大尺寸
+          .resize(800, 800, {
             fit: 'inside',
             withoutEnlargement: true
           })
-          .jpeg({ quality: 80 }) // 压缩质量
+          .jpeg({ quality: 80 })
           .toBuffer()
 
-        const imageId = new mongoose.Types.ObjectId()
-        const thumbnailPath = path.join(uploadDir, `thumb_${imageId}.jpg`)
-        
-        // 保存缩略图
-        await sharp(thumbnail).toFile(thumbnailPath)
+        // 上传原图到 COS
+        const originalKey = `images/original/${imageId}.jpg`
+        await new Promise((resolve, reject) => {
+          cos.putObject({
+            Bucket: BUCKET,
+            Region: REGION,
+            Key: originalKey,
+            Body: fs.createReadStream(file.path)
+          }, (err, data) => {
+            if (err) reject(err)
+            else resolve(data)
+          })
+        })
+
+        // 上传缩略图到 COS
+        const thumbnailKey = `images/thumbnail/${imageId}.jpg`
+        await new Promise((resolve, reject) => {
+          cos.putObject({
+            Bucket: BUCKET,
+            Region: REGION,
+            Key: thumbnailKey,
+            Body: thumbnail
+          }, (err, data) => {
+            if (err) reject(err)
+            else resolve(data)
+          })
+        })
+
+        // 删除本地临时文件
+        fs.unlinkSync(file.path)
 
         return {
           _id: imageId,
-          originalPath: file.path,
-          thumbnailPath,
+          originalPath: `https://${BUCKET}.cos.${REGION}.myqcloud.com/${originalKey}`,
+          thumbnailPath: `https://${BUCKET}.cos.${REGION}.myqcloud.com/${thumbnailKey}`,
           contentType: 'image/jpeg'
         }
       }))
@@ -144,25 +174,17 @@ app.post('/api/memories/upload', async (req, res) => {
   })
 })
 
-// 优化图片获取接口
+// 修改图片获取接口
 app.get('/api/images/:id', async (req, res) => {
   try {
     const id = req.params.id
-    const size = req.query.size || 'thumb' // 支持获取原图或缩略图
+    const size = req.query.size || 'thumb'
     
-    // 检查缓存
-    const cacheKey = `${id}_${size}`
-    const cachedImage = imageCache.get(cacheKey)
-    if (cachedImage) {
-      res.set('Content-Type', 'image/jpeg')
-      return res.send(cachedImage)
-    }
-
     // 从临时存储或数据库获取
-    let imagePath
+    let imageUrl
     const tempImage = req.app.locals.tempImages?.[id]
     if (tempImage) {
-      imagePath = size === 'original' ? tempImage.originalPath : tempImage.thumbnailPath
+      imageUrl = size === 'original' ? tempImage.originalPath : tempImage.thumbnailPath
     } else {
       const memory = await Memory.findOne({ 'images._id': id })
       if (!memory) return res.status(404).send('Image not found')
@@ -170,15 +192,11 @@ app.get('/api/images/:id', async (req, res) => {
       const image = memory.images.find(img => img._id.toString() === id)
       if (!image) return res.status(404).send('Image not found')
       
-      imagePath = size === 'original' ? image.originalPath : image.thumbnailPath
+      imageUrl = size === 'original' ? image.originalPath : image.thumbnailPath
     }
 
-    // 读取并缓存图片
-    const imageBuffer = await fs.promises.readFile(imagePath)
-    imageCache.set(cacheKey, imageBuffer)
-
-    res.set('Content-Type', 'image/jpeg')
-    res.send(imageBuffer)
+    // 重定向到 COS URL
+    res.redirect(imageUrl)
   } catch (error) {
     console.error('Get image error:', error)
     res.status(500).send('Server error')
