@@ -287,6 +287,21 @@ button:disabled {
   .board-title {
     font-size: 1.5rem;
   }
+
+  .input-footer {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .mood-selector {
+    width: 100%;
+    justify-content: center;
+  }
+
+  button {
+    width: 100%;
+    padding: 0.8rem;
+  }
 }
 
 /* 添加动画 */

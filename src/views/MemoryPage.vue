@@ -49,9 +49,17 @@
                    required>
           </div>
           
-          <div class="form-group">
+          <div class="form-group date-group">
             <label>日期</label>
-            <input v-model="newMemory.date" type="date" required>
+            <el-date-picker
+              v-model="newMemory.date"
+              type="date"
+              placeholder="选择日期"
+              format="YYYY年MM月DD日"
+              value-format="YYYY-MM-DD"
+              :size="size"
+              class="custom-date-picker"
+            />
           </div>
           
           <div class="form-group">
@@ -157,6 +165,8 @@
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import BackButton from '../components/BackButton.vue'
+import 'element-plus/dist/index.css'
+import { ElDatePicker } from 'element-plus'
 
 const API_URL = 'http://110.42.197.57:3000/api'
 const memories = ref([])
@@ -165,7 +175,7 @@ const error = ref('')
 
 const newMemory = ref({
   title: '',
-  date: '',
+  date: new Date().toISOString().split('T')[0],
   description: '',
   images: []
 })
@@ -284,6 +294,9 @@ const fetchMemories = async () => {
 onMounted(() => {
   fetchMemories()
 })
+
+// 日期选择器配置
+const size = ref('large')
 
 // ... 其他代码 ...
 </script>
@@ -705,6 +718,137 @@ onMounted(() => {
 
   .image-container {
     height: 140px;
+  }
+}
+
+/* 更新日历样式 */
+:deep(.el-input__wrapper) {
+  border: 2px solid #ff6b81 !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  padding: 0.5rem;
+}
+
+:deep(.el-input__wrapper:hover) {
+  border-color: #ff8c9a !important;
+  box-shadow: 0 2px 8px rgba(255, 107, 129, 0.15) !important;
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  border-color: #ff6b81 !important;
+  box-shadow: 0 0 0 4px rgba(255, 107, 129, 0.15) !important;
+}
+
+:deep(.el-input__inner) {
+  font-size: 1rem;
+  color: #495057;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+}
+
+/* 图片上传区域样式 */
+.image-upload-container {
+  background: #f8f9fa;
+  border: 2px dashed #dee2e6;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.image-upload-container:hover {
+  border-color: #ff6b81;
+  background: #fff;
+}
+
+.image-upload-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: white;
+  border: 2px solid #ff6b81;
+  color: #ff6b81;
+  padding: 0.8rem 1.5rem;
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.image-upload-btn:hover {
+  background: #ff6b81;
+  color: white;
+  transform: translateY(-2px);
+}
+
+.upload-icon {
+  font-size: 1.2rem;
+}
+
+/* 图片预览网格样式 */
+.image-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.preview-item {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 50%;
+  color: #ff4757;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.remove-image:hover {
+  background: #ff4757;
+  color: white;
+}
+
+.hidden-input {
+  display: none;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .image-preview-grid {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 0.8rem;
+  }
+  
+  .image-upload-btn {
+    width: 100%;
+    justify-content: center;
   }
 }
 
