@@ -14,8 +14,10 @@
     <!-- 回忆列表 - 添加无限滚动 -->
     <div class="memory-grid" 
          v-infinite-scroll="loadMore"
-         infinite-scroll-disabled="loading"
-         infinite-scroll-distance="10">
+         :infinite-scroll-disabled="loading || !hasMore"
+         :infinite-scroll-distance="100"
+         :infinite-scroll-immediate-check="true"
+         infinite-scroll-watch-enabled>
       <div v-for="memory in memories" 
            :key="memory._id" 
            class="memory-card"
@@ -41,6 +43,11 @@
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-state">
       <el-spinner />
+    </div>
+
+    <!-- 无更多数据提示 -->
+    <div v-if="!hasMore && !loading && memories.length > 0" class="no-more">
+      期待添加更多回忆
     </div>
 
     <!-- 添加创建回忆的模态框 -->
@@ -152,11 +159,6 @@
 
             <div class="viewer-info">
               <div class="info-section">
-                <h4>关于这个回忆</h4>
-                <p class="memory-description">{{ selectedMemory.description || '暂无描述' }}</p>
-              </div>
-
-              <div class="info-section">
                 <h4>照片集 ({{ selectedMemory.images.length }})</h4>
                 <div class="thumbnail-grid">
                   <div v-for="(image, index) in selectedMemory.images"
@@ -168,6 +170,11 @@
                          :alt="`照片 ${index + 1}`">
                   </div>
                 </div>
+              </div>
+
+              <div class="info-section">
+                <h4>关于这个回忆</h4>
+                <p class="memory-description">{{ selectedMemory.description || '暂无描述' }}</p>
               </div>
             </div>
           </div>
@@ -284,12 +291,20 @@ const showMemory = (memory) => {
   selectedMemory.value = memory
   currentImageIndex.value = 0
   imageLoaded.value = false
+  // 禁止背景滚动
+  document.body.style.overflow = 'hidden'
+  document.body.style.position = 'fixed'
+  document.body.style.width = '100%'
 }
 
 const closeViewer = () => {
   selectedMemory.value = null
   currentImageIndex.value = 0
   imageLoaded.value = false
+  // 恢复背景滚动
+  document.body.style.overflow = ''
+  document.body.style.position = ''
+  document.body.style.width = ''
 }
 
 const prevImage = () => {
@@ -315,6 +330,10 @@ const fetchMemories = async () => {
 }
 
 onMounted(() => {
+  // 重置状态
+  page.value = 1
+  memories.value = []
+  hasMore.value = true
   loadMore()
 })
 
@@ -333,27 +352,37 @@ const getOriginalUrl = (imageUrl) => {
   return `${imageUrl}?size=original`
 }
 
-// 加载更多数据
+const ITEMS_PER_PAGE = 10  // 定义每页加载数量
+
+// 修改加载更多函数
 const loadMore = async () => {
   if (loading.value || !hasMore.value) return
   
   try {
     loading.value = true
+    console.log('Loading page:', page.value) // 调试日志
+
     const response = await axios.get(`${API_URL}/memories`, {
       params: {
         page: page.value,
-        limit: 10
+        limit: ITEMS_PER_PAGE  // 使用常量
       }
     })
     
-    if (response.data.length < 10) {
+    const newMemories = response.data
+    console.log('Loaded memories:', newMemories.length) // 调试日志
+    
+    // 如果返回的数据少于每页数量，说明没有更多数据了
+    if (newMemories.length < ITEMS_PER_PAGE) {
       hasMore.value = false
     }
     
-    memories.value.push(...response.data)
+    // 将新数据添加到现有数据后面
+    memories.value = [...memories.value, ...newMemories]
     page.value++
   } catch (err) {
-    console.error('Load more error:', err)
+    console.error('加载更多失败:', err)
+    hasMore.value = false  // 出错时也设置为没有更多数据
   } finally {
     loading.value = false
   }
@@ -367,6 +396,9 @@ const loadMore = async () => {
   padding: 2rem;
   min-height: 100vh;
   background: #f5f5f5;
+  height: 100vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-bar {
@@ -415,6 +447,8 @@ const loadMore = async () => {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 2rem;
   padding: 2rem;
+  min-height: 100px;
+  padding-bottom: 20px;
 }
 
 .memory-card {
@@ -596,6 +630,7 @@ const loadMore = async () => {
   flex-direction: column;
   position: relative;
   overflow: hidden;
+  max-height: 100vh;
 }
 
 .viewer-header {
@@ -617,14 +652,11 @@ const loadMore = async () => {
 }
 
 .viewer-body {
-  position: relative;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  background: #f5f5f5;
-  min-height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .viewer-main {
@@ -665,11 +697,13 @@ const loadMore = async () => {
 }
 
 .thumbnail-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
-  background: #f5f5f5;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  overflow: hidden;
+  touch-action: none;
 }
 
 .thumbnail {
@@ -759,16 +793,64 @@ const loadMore = async () => {
 
   .viewer-main {
     flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.5rem;
+    height: auto;
   }
 
   .main-image {
     width: 100%;
-    height: 50vh;
+    height: 40vh;
+    margin: 0;
   }
 
   .viewer-info {
     width: 100%;
+    padding: 1rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
   }
+
+  .viewer-header {
+    padding: 1rem;
+  }
+
+  .viewer-header h3 {
+    font-size: 1.2rem;
+  }
+
+  .thumbnail {
+    width: 60px;
+    height: 60px;
+  }
+
+  .thumbnail-grid {
+    padding: 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .nav-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .image-counter {
+    font-size: 0.8rem;
+    padding: 0.1rem 0.4rem;
+  }
+
+  .close-btn {
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: 1.5rem;
+  }
+}
+
+/* 添加滑动手势支持的样式 */
+.viewer-body {
+  touch-action: pan-y pinch-zoom;
 }
 
 /* 响应式调整 */
@@ -851,7 +933,7 @@ const loadMore = async () => {
   font-size: 1.2rem;
 }
 
-/* 图片��览网格样式 */
+/* 图片预览网格样式 */
 .image-preview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -970,6 +1052,177 @@ const loadMore = async () => {
   .memory-card {
     height: 200px;
   }
+}
+
+/* 更新查看器内容样式 */
+.viewer-content {
+  /* ... existing code ... */
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewer-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.viewer-info {
+  padding: 1rem;
+}
+
+/* 优化描述文本显示 */
+.memory-description {
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.5rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  line-height: 1.6;
+  margin: 0.5rem 0;
+  touch-action: pan-y;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .viewer-content {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .viewer-header {
+    position: relative;
+    padding-right: 3rem; /* 为闭按钮留出空间 */
+  }
+  
+  .close-btn {
+    position: fixed; /* 改为固定位 */
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 1010;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .viewer-info {
+    padding: 1rem;
+    background: white;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  .memory-description {
+    max-height: 20vh; /* 移动端降低描述区域高度 */
+    font-size: 0.9rem;
+  }
+
+  .info-section {
+    margin-bottom: 1rem;
+  }
+
+  .info-section h4 {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+  }
+
+  /* 优化缩略图区域 */
+  .thumbnail-grid {
+    margin: 0.5rem -1rem;
+    padding: 0.5rem 1rem;
+    background: #f8f9fa;
+    white-space: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    gap: 0.5rem;
+  }
+}
+
+/* 添加滚动条样式 */
+.memory-description::-webkit-scrollbar {
+  width: 4px;
+}
+
+.memory-description::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.memory-description::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 2px;
+}
+
+/* 添加渐变遮罩提示可滚动 */
+.memory-description {
+  position: relative;
+}
+
+.memory-description::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(transparent, #f8f9fa);
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+/* 更新无更多数据提示的样式 */
+.no-more {
+  text-align: center;
+  padding: 2rem 0;
+  color: #999;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 1rem auto;
+  max-width: 200px;
+}
+
+.no-more::before,
+.no-more::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(to right, transparent, #ddd, transparent);
+}
+
+/* 或者使用更可爱的样式版本 */
+.no-more {
+  text-align: center;
+  padding: 1.5rem 0;
+  color: #ff6b81;  /* 使用主题色 */
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem auto;
+  max-width: 280px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.no-more::before,
+.no-more::after {
+  content: '✨';  /* 使用表情符号装饰 */
+  font-size: 1rem;
+  color: #ffa5b1;
 }
 
 /* ... 其他样式 ... */
