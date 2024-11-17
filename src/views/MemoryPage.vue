@@ -11,14 +11,18 @@
       </button>
     </div>
 
-    <!-- 回忆列表 -->
-    <div class="memory-grid">
+    <!-- 回忆列表 - 添加无限滚动 -->
+    <div class="memory-grid" 
+         v-infinite-scroll="loadMore"
+         infinite-scroll-disabled="loading"
+         infinite-scroll-distance="10">
       <div v-for="memory in memories" 
            :key="memory._id" 
            class="memory-card"
            @click="showMemory(memory)">
         <div class="image-container">
-          <img :src="memory.images[0]" 
+          <!-- 使用懒加载和缩略图 -->
+          <img v-lazy="getThumbUrl(memory.images[0])"
                :alt="memory.title"
                loading="lazy">
           <div v-if="memory.images.length > 1" 
@@ -32,6 +36,11 @@
           <div class="card-date">{{ formatDate(memory.date) }}</div>
         </div>
       </div>
+    </div>
+
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading-state">
+      <el-spinner />
     </div>
 
     <!-- 添加创建回忆的模态框 -->
@@ -120,8 +129,14 @@
         <div class="viewer-body">
           <div class="viewer-main">
             <div class="main-image">
-              <img :src="selectedMemory.images[currentImageIndex]" 
-                   :alt="selectedMemory.title">
+              <!-- 使用高质量图片 -->
+              <img v-lazy="getOriginalUrl(selectedMemory.images[currentImageIndex])"
+                   :alt="selectedMemory.title"
+                   @load="imageLoaded = true">
+              <!-- 加载占位符 -->
+              <div v-if="!imageLoaded" class="image-placeholder">
+                <el-spinner />
+              </div>
               
               <button class="nav-btn prev" 
                       @click.stop="prevImage" 
@@ -149,7 +164,8 @@
                        class="thumbnail"
                        :class="{ active: index === currentImageIndex }"
                        @click="currentImageIndex = index">
-                    <img :src="image" :alt="`照片 ${index + 1}`">
+                    <img v-lazy="getThumbUrl(image)" 
+                         :alt="`照片 ${index + 1}`">
                   </div>
                 </div>
               </div>
@@ -164,6 +180,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
+import { ElSpinner } from 'element-plus'
 import BackButton from '../components/BackButton.vue'
 import 'element-plus/dist/index.css'
 import { ElDatePicker } from 'element-plus'
@@ -172,6 +189,10 @@ const API_URL = 'http://110.42.197.57:3000/api'
 const memories = ref([])
 const showCreateModal = ref(false)
 const error = ref('')
+const loading = ref(false)
+const page = ref(1)
+const hasMore = ref(true)
+const imageLoaded = ref(false)
 
 const newMemory = ref({
   title: '',
@@ -262,11 +283,13 @@ const currentImageIndex = ref(0)
 const showMemory = (memory) => {
   selectedMemory.value = memory
   currentImageIndex.value = 0
+  imageLoaded.value = false
 }
 
 const closeViewer = () => {
   selectedMemory.value = null
   currentImageIndex.value = 0
+  imageLoaded.value = false
 }
 
 const prevImage = () => {
@@ -292,11 +315,49 @@ const fetchMemories = async () => {
 }
 
 onMounted(() => {
-  fetchMemories()
+  loadMore()
 })
 
 // 日期选择器配置
 const size = ref('large')
+
+// 获取缩略图URL
+const getThumbUrl = (imageUrl) => {
+  if (!imageUrl) return ''
+  return `${imageUrl}?size=thumb`
+}
+
+// 获取原图URL
+const getOriginalUrl = (imageUrl) => {
+  if (!imageUrl) return ''
+  return `${imageUrl}?size=original`
+}
+
+// 加载更多数据
+const loadMore = async () => {
+  if (loading.value || !hasMore.value) return
+  
+  try {
+    loading.value = true
+    const response = await axios.get(`${API_URL}/memories`, {
+      params: {
+        page: page.value,
+        limit: 10
+      }
+    })
+    
+    if (response.data.length < 10) {
+      hasMore.value = false
+    }
+    
+    memories.value.push(...response.data)
+    page.value++
+  } catch (err) {
+    console.error('Load more error:', err)
+  } finally {
+    loading.value = false
+  }
+}
 
 // ... 其他代码 ...
 </script>
@@ -790,7 +851,7 @@ const size = ref('large')
   font-size: 1.2rem;
 }
 
-/* 图片预览网格样式 */
+/* 图片��览网格样式 */
 .image-preview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
@@ -849,6 +910,65 @@ const size = ref('large')
   .image-upload-btn {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* 添加新样式 */
+.loading-state {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.image-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+}
+
+.memory-card {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.memory-card.lazy-load {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.memory-card.lazy-loaded {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 优化图片加载过渡效果 */
+.image-container img {
+  transition: opacity 0.3s ease;
+}
+
+.image-container img[lazy="loading"] {
+  opacity: 0;
+}
+
+.image-container img[lazy="loaded"] {
+  opacity: 1;
+}
+
+/* 响应式优化 */
+@media (max-width: 768px) {
+  .memory-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+  }
+  
+  .memory-card {
+    height: 200px;
   }
 }
 

@@ -1,23 +1,16 @@
 const mongoose = require('mongoose');
 
 const memorySchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: true
-  },
-  date: {
-    type: String,
-    required: true
-  },
-  description: {
-    type: String,
-    required: true
-  },
+  title: String,
+  date: Date,
+  description: String,
+  tags: [String],
   images: [{
-    data: Buffer,
+    _id: mongoose.Schema.Types.ObjectId,
+    originalPath: String,
+    thumbnailPath: String,
     contentType: String
   }],
-  tags: [String],
   createdAt: {
     type: Date,
     default: Date.now
