@@ -158,7 +158,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 import BackButton from '../components/BackButton.vue'
 
-const API_URL = 'http://localhost:3000/api'
+const API_URL = 'http://110.42.197.57:3000/api'
 const memories = ref([])
 const showCreateModal = ref(false)
 const error = ref('')

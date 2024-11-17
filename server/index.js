@@ -7,14 +7,14 @@ const Memory = require('./models/Memory');
 const path = require('path');
 const fs = require('fs');
 
-const API_URL = process.env.API_URL || 'http://localhost:3000';
+const API_URL = process.env.API_URL || 'http://110.42.197.57:3000';
 
 // 中间件
 app.use(cors())
 app.use(express.json())
 
 // 连接MongoDB
-mongoose.connect('mongodb://localhost:27017/loveMessages', {
+mongoose.connect('mongodb://110.42.197.57:27017/loveMessages', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })

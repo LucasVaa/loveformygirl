@@ -75,7 +75,7 @@ const loading = ref(false)
 const error = ref(null)
 const emojis = ['😊', '😂', '🥰', '😍', '🤔', '😮', '😢', '🙏']
 
-const API_URL = 'http://localhost:3000/api'
+const API_URL = 'http://110.42.197.57:3000/api'
 
 // 计算属性：检查是否可以提交
 const canSubmit = computed(() => {
