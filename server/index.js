@@ -16,7 +16,10 @@ app.use(express.json())
 // 连接MongoDB
 mongoose.connect('mongodb://110.42.197.57:27017/loveMessages', {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
+  user: process.env.MONGO_USER,
+  pass: process.env.MONGO_PASSWORD,
+  authSource: 'admin'
 })
 
 // 消息模型
